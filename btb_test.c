@@ -1,86 +1,49 @@
-#include <stdio.h>
-#include <sys/mman.h>
-#include <unistd.h>
-#include <fcntl.h>
-#include <stdlib.h>
-#include <stdint.h>
-#include "affinity.h"
+#include "pmc_utils.h"
 
 #define BTB_BLOCK_FILENAME "btb_block.bin"
 
 
-static inline uint64_t
-read_pmccntr(void)
-{
-    /**
-     * @brief The PMCCNTR holds the value of the processor Cycle Counter, CCNT, that counts processor clock cycles.
-     * @link: https://developer.arm.com/documentation/ddi0406/c/System-Level-Architecture/System-Control-Registers-in-a-VMSA-implementation/VMSA-System-control-registers-descriptions--in-register-order/PMCCNTR--Performance-Monitors-Cycle-Count-Register--VMSA
-     */
-	uint64_t val;
-	asm volatile("mrs %0, pmccntr_el0" : "=r"(val));
-	return val;
+void repeat(uint32_t event, uint32_t branch_number, uint32_t align){
+    puts("========================================");
+    /* Generate test block */
+    char buf[4096];
+    sprintf(buf, "python3 btb_asm.py %d %d > btb_block.s; as btb_block.s -o btb_block.o; objcopy -O binary btb_block.o btb_block.bin\n", branch_number, align);
+    system(buf);
+    printf("EXEC: %s\n", buf);
+    
+    /* Read from file*/
+    int fd = open(BTB_BLOCK_FILENAME, O_RDONLY);
+    if (fd < 0) {
+        printf("open failed");}
+    int size = lseek(fd, 0, SEEK_END);
+    printf("bin size = %d\n", size);
+    lseek(fd, 0, SEEK_SET);
+    // read(fd, btb_block, BUFSIZE);
+
+    /* Alloc enough memory*/
+    uint32_t BUFSIZE = 100*4096*4096; // 1073741824; //1GB
+    void (*btb_block)() =  mmap(NULL, BUFSIZE, PROT_READ|PROT_WRITE|PROT_EXEC, MAP_PRIVATE, fd, 0);// mmap(NULL, BUFSIZE, PROT_READ|PROT_WRITE|PROT_EXEC, MAP_PRIVATE|MAP_HUGETLB, fd, 0);
+    
+    /* TODO: flash btb; */
+
+    set_pmc_events_0(event); 
+
+    /* Calc */
+    uint32_t cycles = read_pmccntr();
+    uint32_t br_mis_pred = read_PMEVCNTR0_EL0();
+    btb_block();
+    uint32_t counter_cycles = read_PMEVCNTR0_EL0() - br_mis_pred;
+    uint32_t all_cycles = read_pmccntr() - cycles;
+    double percent = (double)counter_cycles/(double)branch_number;
+    printf("COUNTER diff: %u\n", counter_cycles);
+    printf("branch number: %u\n", branch_number);
+    printf("CPU cycles diff: 0x%x\n", all_cycles);
+    printf("Percent: %lf\n", percent);
+
+    /* Clean */
+    munmap(btb_block, BUFSIZE);
+    system("rm btb_block.s btb_block.o btb_block.bin");
 }
-
-#define ARM_PMU_BR_MIS_PRED   0x0010
-#define ARM_PMU_BR_PRED   0x0012
-#define ARMV8_PMEVTYPER_EVTCOUNT_MASK 0x3ff
-
-static inline void
-write_PMEVTYPER0_EL0(void)
-{
-    uint32_t val = ARM_PMU_BR_MIS_PRED;
-    asm volatile("msr pmevtyper0_el0, %0" :: "r"(val));
-}
-
-static inline uint32_t
-read_PMEVCNTR0_EL0(void)
-{
-	uint32_t val;
-	asm volatile("mrs %0,  pmevcntr0_el0" : "=r"(val));
-	return val;
-}
-
-static inline void init_cycles(uint32_t events)
-{
-    events &= ARMV8_PMEVTYPER_EVTCOUNT_MASK;
-    asm volatile("isb");
-    /* Just use counter 0 */
-    asm volatile("msr pmevtyper0_el0, %0" : : "r"(events));
-    /*   Performance Monitors Count Enable Set register bit 30:1 disable, 31,1
-    * enable */
-    uint32_t r = 0;
-
-    asm volatile("mrs %0, pmcntenset_el0" : "=r"(r));
-    asm volatile("msr pmcntenset_el0, %0" : : "r"(r | 1));
-}
-
-
-void play(uint32_t evtCount){
-    uint32_t val = 0;
-    /* Access cycle counter */
-    asm volatile("mrs %0, pmccntr_el0" : "=r" (val));
-    printf("pmccntr_el0: %d", val);
-
-    /* Setup PMU counter to record specific event */
-    /* evtCount is the event id */
-    evtCount &= ARMV8_PMEVTYPER_EVTCOUNT_MASK;
-    asm volatile("isb");
-    /* Just use counter 0 here */
-    asm volatile("msr pmevtyper0_el0, %0" : : "r" (evtCount));
-    /*   Performance Monitors Count Enable Set register bit 30:1 disable, 31,1 enable */
-    uint32_t r = 0;
-    asm volatile("mrs %0, pmcntenset_el0" : "=r" (r));
-    asm volatile("msr pmcntenset_el0, %0" : : "r" (r|1));
-
-    /* Read counter */
-    asm volatile("mrs %0, pmevcntr0_el0" : "=r" (r));
-
-    /*   Disable PMU counter 0. Performance Monitors Count Enable Set register: clear bit 0*/
-    r = 0;
-    asm volatile("mrs %0, pmcntenset_el0" : "=r" (r));
-    asm volatile("msr pmcntenset_el0, %0" : : "r" (r&&0xfffffffe));
-}
-
 
 int main(){
     affinity_init();
@@ -88,34 +51,30 @@ int main(){
     printf("Bind to cpu 2\n");
     int access = has_pmu_access();
     printf("ARM PMU access = %d\n", access);
-
-    int fd = open(BTB_BLOCK_FILENAME, O_RDONLY);
-    if (fd < 0) {
-        printf("open failed");}
-    
-    void (*btb_block)() = mmap(NULL, 100*4096*4096, PROT_READ|PROT_WRITE|PROT_EXEC, MAP_PRIVATE, fd, 0);
-    // mprotect(btb_block, 4096, PROT_READ | PROT_EXEC);
-    read(fd, btb_block, 4096*4096);
-
-    //play(ARM_PMU_BR_MIS_PRED);
-    // write_PMEVTYPER0_EL0();
-    // printf("debug1");
+    if (access == 0){
+        printf("No access to PMU\n");
+        return 0;
+    }
+    uint32_t event = ARM_PMU_BF_SPEC;
+    ;//ARM_PMU_STALL_FRONTEND;
+    // ARM_PMU_STALL_OP_FRONTEND;
+    //  ARM_PMU_STALL_FRONTEND;
+    // ARM_PMU_BR_MIS_PRED; //ARM_PMU_BR_IMMED_RETIRED; //ARM_PMU_BR_PRED ;//ARM_PMU_BR_MIS_PRED;
     // ARM_PMU_BR_MIS_PRED
-    init_cycles(ARM_PMU_BR_PRED); 
-
-    //play();
-    btb_block();
-    btb_block();
-
-    uint32_t cycles = read_pmccntr();
-    printf("cycles: %x\n", cycles);
-
-    uint32_t br_mis_pred = read_PMEVCNTR0_EL0();
-    // printf("ARM_PMU_BR_MIS_PRED count: %x\n", br_mis_pred);
-    btb_block();
-    printf("ARM_PMU_BR_MIS_PRED diff: %x\n", read_PMEVCNTR0_EL0() - br_mis_pred);
-    printf("cycles diff: %lx\n", read_pmccntr() - cycles);
-    printf("Done!\n");
-
+    // ARM_PMU_BR_PRED 
+    // ARM_PMU_BR_RETIRED
+    repeat(event, 128000, 8);
+    repeat(event, 128000, 4);
+    repeat(event, 128000, 2);
+    repeat(event, 8000, 8);
+    repeat(event, 8000, 4);
+    repeat(event, 8000, 2);
+    repeat(event, 2000, 8);
+    repeat(event, 2000, 4);
+    repeat(event, 2000, 2);
+    repeat(event, 1000, 16);
+    repeat(event, 1000, 8);
+    repeat(event, 1000, 4);
+    repeat(event, 1000, 2);
     return 0;
 }

@@ -1,4 +1,4 @@
-
+import sys
 
 def btb_size_x86(name, num_branches, align):
     test_code = """
@@ -43,5 +43,12 @@ ret
 
 
 if __name__=="__main__":
-    CODE = btb_size_arm("abc", 128000, 8) # '0x1f400' bingo
+    if len(sys.argv) < 2:
+        branch_size = 8000
+        align = 8
+    else:
+        branch_size = int(sys.argv[1])
+        align = int(sys.argv[2])
+        
+    CODE = btb_size_arm("abc", branch_size, align) # '128000:0x1f400' bingo
     print(CODE)
