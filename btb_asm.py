@@ -20,6 +20,29 @@ nop
     print(test_code)
     return test_code
 
+
+def btb_size_arm_indirect(name, num_branches, align): 
+    test_code = """
+.macro OneJump index
+adr x0, next_\index
+BR X0
+.align {align}
+next_\index:
+.endm
+
+b BtbLoop
+.align 22 //; align to a 4MB boundary
+
+BtbLoop:
+.irp label, {sequence}
+OneJump index=\label
+.endr
+
+ret
+    """.format(sequence=",".join([str(x) for x in range(0, num_branches)]),align=align)
+    # print(test_code)
+    return test_code
+
 def btb_size_arm(name, num_branches, align): 
     test_code = """
 .macro OneJump index
@@ -49,6 +72,8 @@ if __name__=="__main__":
     else:
         branch_size = int(sys.argv[1])
         align = int(sys.argv[2])
-        
-    CODE = btb_size_arm("abc", branch_size, align) # '128000:0x1f400' bingo
+
+    # CODE = btb_size_arm("abc", branch_size, align) # '128000:0x1f400' bingo
+    # print(CODE)
+    CODE = btb_size_arm_indirect("abc", branch_size, align) # '128000:0x1f400' bingo
     print(CODE)
