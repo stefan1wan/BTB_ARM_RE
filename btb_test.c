@@ -26,12 +26,13 @@ void repeat(uint32_t event, uint32_t branch_number, uint32_t align){
 
     /* Alloc enough memory*/
     uint64_t BUFSIZE =   1024*1024*1024; //1GB;100*4096*4096; //100M //
-    void (*btb_block)() = mmap(NULL, BUFSIZE, PROT_READ|PROT_WRITE|PROT_EXEC, MAP_HUGETLB|MAP_HUGE_1GB, fd, 0); //  mmap(NULL, BUFSIZE, PROT_READ|PROT_WRITE|PROT_EXEC, MAP_PRIVATE, fd, 0); //
+    void (*btb_block)() = mmap(NULL, BUFSIZE, PROT_READ|PROT_WRITE|PROT_EXEC, MAP_PRIVATE|MAP_ANONYMOUS|MAP_HUGETLB|MAP_HUGE_1GB, 0, 0); //  mmap(NULL, BUFSIZE, PROT_READ|PROT_WRITE|PROT_EXEC, MAP_PRIVATE, fd, 0); //
     if(btb_block == MAP_FAILED){
         printf("mmap failed\n");
         return;
     }
-    
+    read(fd, btb_block, BUFSIZE);
+
     /*  TODO: flash btb; */
     btb_block();
     btb_block();

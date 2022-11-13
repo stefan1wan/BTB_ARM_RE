@@ -1,0 +1,1 @@
+scp k920:/home/wan/btb_arm_re/btb_miss_pred_map.txt .

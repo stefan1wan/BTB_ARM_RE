@@ -1,15 +1,22 @@
+#define _GNU_SOURCE
+#include <sys/mman.h>
+#include <linux/mman.h>
+#include <string.h>
+
 #include "pmc_utils.h"
 
 #define BTB_BLOCK_FILENAME "btb_block.bin"
+#define BUFSIZE (1024*1024*1024) //1GB hugepage
+void (*btb_block)() = NULL;
 
-
-void repeat(uint32_t event, uint32_t branch_number, uint32_t align){
+uint32_t repeat(uint32_t event, uint32_t branch_number, uint32_t align){
     puts("========================================");
     /* Generate test block */
     char buf[4096];
     sprintf(buf, "python3 btb_asm.py %d %d > btb_block.s; as btb_block.s -o btb_block.o; objcopy -O binary btb_block.o btb_block.bin\n", branch_number, align);
     system(buf);
     printf("EXEC: %s\n", buf);
+    
     
     /* Read from file*/
     int fd = open(BTB_BLOCK_FILENAME, O_RDONLY);
@@ -18,16 +25,14 @@ void repeat(uint32_t event, uint32_t branch_number, uint32_t align){
     int size = lseek(fd, 0, SEEK_END);
     printf("bin size = %d\n", size);
     lseek(fd, 0, SEEK_SET);
-    // read(fd, btb_block, BUFSIZE);
 
-    /* Alloc enough memory*/
-    uint32_t BUFSIZE = 100*4096*4096; // 1073741824; //1GB
-    void (*btb_block)() =  mmap(NULL, BUFSIZE, PROT_READ|PROT_WRITE|PROT_EXEC, MAP_PRIVATE, fd, 0); // mmap(NULL, BUFSIZE, PROT_READ|PROT_WRITE|PROT_EXEC, MAP_PRIVATE|MAP_HUGETLB, fd, 0);
+    // don't need to clear the memory, cause we have `ret` in the end
+    read(fd, btb_block, BUFSIZE);
     
     /* TODO: flash btb; */
-    btb_block();
-    btb_block();
-    btb_block();
+    for(int i=0; i<10; i++){
+        btb_block();
+    }
 
     /* set event */
     set_pmc_events_0(event); 
@@ -44,8 +49,9 @@ void repeat(uint32_t event, uint32_t branch_number, uint32_t align){
     printf("Percent: %lf\n", percent);
 
     /* Clean */
-    munmap(btb_block, BUFSIZE);
+    // munmap(btb_block, BUFSIZE);
     system("rm btb_block.s btb_block.o btb_block.bin");
+    return counter_cycles; // Return the diff of event counter;
 }
 
 int main(){
@@ -58,86 +64,70 @@ int main(){
         printf("No access to PMU\n");
         return 0;
     }
-    uint32_t event = ARM_PMU_BR_MIS_PRED;//ARM_PMU_BR_PRED;//ARM_PMU_BF_SPEC;
-    ;//ARM_PMU_STALL_FRONTEND;
-    // ARM_PMU_STALL_OP_FRONTEND;
-    //  ARM_PMU_STALL_FRONTEND;
-    // ARM_PMU_BR_MIS_PRED; //ARM_PMU_BR_IMMED_RETIRED; //ARM_PMU_BR_PRED ;//ARM_PMU_BR_MIS_PRED;
-    // ARM_PMU_BR_MIS_PRED
-    // ARM_PMU_BR_PRED 
-    // ARM_PMU_BR_RETIRED
-    // repeat(event, 128000, 8);
-    // repeat(event, 128000, 4);
-    // repeat(event, 128000, 2);
-    // repeat(event, 8192, 7);
-    // repeat(event, 8192, 6);
-    // repeat(event, 8192, 5);
-    // repeat(event, 8192, 4);
-    // repeat(event, 8192, 3);
+    uint32_t event = ARM_PMU_BR_MIS_PRED;
 
+    /* Alloc enough memory*/
+    btb_block = mmap(NULL, BUFSIZE, PROT_READ|PROT_WRITE|PROT_EXEC,MAP_PRIVATE| MAP_ANONYMOUS|MAP_HUGETLB|MAP_HUGE_1GB, 0, 0); 
+    // 
+    if(btb_block == MAP_FAILED){
+        printf("mmap failed\n");
+        exit(1);
+        return 0;
+    }
 
-    // repeat(event, 6144, 7);
-    // repeat(event, 6144, 6);
-    // repeat(event, 6144, 5);
-    // repeat(event, 6144, 4);
-    // repeat(event, 6144, 3);
+    /* Analyze BTB entry capacity */
+    uint32_t branch_vec[] = {1024, 1024*2, 1024*3, 1024*4, 1024*5, 1024*6, 1024*7};
+    uint32_t align_vec[] = {3, 4, 5, 6, 7, 8, 9, 10};
+    int branch_len = sizeof(branch_vec)/sizeof(branch_vec[0]);
+    int align_len = sizeof(align_vec)/sizeof(align_vec[0]);
+    uint32_t counter_map[branch_len][align_len];
+    for (int i = 0; i <branch_len ; i++){
+        for(int j = 0; j < align_len; j++){
+            uint32_t counter_diff =  repeat(event, branch_vec[i], align_vec[j]);
+            counter_map[i][j] = counter_diff;
+        }
+    }
+    /* Capacity result */
+    printf("Capacity result(branch mispred / branches):\n");
+    printf("branch/align\t");
+    for(int j=0; j<align_len; j++){
+        printf("%d\t", align_vec[j]);
+    }
+    printf("\n");
+    for (int i = 0; i <branch_len ; i++){
+        printf("%u Branches:\t", branch_vec[i]);
+        for(int j = 0; j < align_len; j++){
+            printf("%.2lf\t", (double)counter_map[i][j]/(double)branch_vec[i]); // 0 means no mispred; 1 means all mispred
+        }
+        printf("\n");
+    }
+    printf("\n");
 
-    // repeat(event, 5120, 7);
-    // repeat(event, 5120, 6);
-    // repeat(event, 5120, 5);
-    // repeat(event, 5120, 4);
-    // repeat(event, 5120, 3);
-    
+    /* Capacity result2 */
+    printf("Capacity result(branch size - branch mispred):\n");
+    printf("branch/align\t");
+    for(int j=0; j<align_len; j++){
+        printf("%d\t", align_vec[j]);
+    }
+    printf("\n");
+    for (int i = 0; i <branch_len ; i++){
+        printf("%u Branches:\t", branch_vec[i]);
+        for(int j = 0; j < align_len; j++){
+            printf("%d\t", branch_vec[i] - counter_map[i][j]); // 0 means no mispred; 1 means all mispred
+        }
+        printf("\n");
+    }
 
-    // repeat(event, 4096, 7);
-    // repeat(event, 4096, 6);
-    // repeat(event, 4096, 5);
-    // repeat(event, 4096, 4);
-    // repeat(event, 4096, 3);
-    // repeat(event, 4096, 2);
-    
-    // repeat(event, 3072, 7);
-    // repeat(event, 3072, 6);
-    // repeat(event, 3072, 5);
-    // repeat(event, 3072, 4);
-    // repeat(event, 3072, 3);
-    
-    // repeat(event, 2048, 7);
-    // repeat(event, 2048, 6);
-    // repeat(event, 2048, 5);
-    // repeat(event, 2048, 4);
-    // repeat(event, 2048, 3);
-    
-
-    // repeat(event, 1024, 7);
-    // repeat(event, 1024, 6);
-    // repeat(event, 1024, 5);
-    // repeat(event, 1024, 4);
-    // repeat(event, 1024, 3);
-    
-    // repeat(event, 100, 2);
-    
-    repeat(event, 1, 19);
-    repeat(event, 1, 19);
-    repeat(event, 2, 19);
-    repeat(event, 2, 19);
-    repeat(event, 3, 19);
-    repeat(event, 3, 19);
-    repeat(event, 4, 19);
-    repeat(event, 4, 19);
-    repeat(event, 5, 19);
-    repeat(event, 5, 19);
-    repeat(event, 6, 19);
-    repeat(event, 6, 19);
-    repeat(event, 7, 19);
-    repeat(event, 7, 19);
-    repeat(event, 12, 19);
-    repeat(event, 12, 19);
-    // repeat(event, 8, 16);
-    // repeat(event, 9, 16);
-    // repeat(event, 10, 16);
-    // repeat(event, 20, 16);
-    // repeat(event, 50, 16);
-
+    /* Write to txt */
+    FILE *fp = fopen("btb_miss_pred_map.txt", "w");
+    for (int i = 0; i <branch_len ; i++){
+        fprintf(fp, "%u \t", branch_vec[i]);
+        for(int j = 0; j < align_len; j++){
+            fprintf(fp, "%.2lf\t", (double)counter_map[i][j]/(double)branch_vec[i]); // 0 means no mispred; 1 means all mispred
+        }
+        fprintf(fp, "\n");
+    }
+    fprintf(fp, "\n");
+    fclose(fp);
     return 0;
 }
