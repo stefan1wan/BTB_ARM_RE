@@ -76,7 +76,7 @@ int main(){
     }
 
     /* Analyze BTB entry capacity */
-    uint32_t branch_vec[] = {1024, 1024*2, 1024*3, 1024*4, 1024*5, 1024*6, 1024*7};
+    uint32_t branch_vec[] = {1024, 1024*2, 1024*3, 1024*4, 1024*5, 1024*6, 1024*7, 1024*8};
     uint32_t align_vec[] = {3, 4, 5, 6, 7, 8, 9, 10};
     int branch_len = sizeof(branch_vec)/sizeof(branch_vec[0]);
     int align_len = sizeof(align_vec)/sizeof(align_vec[0]);
