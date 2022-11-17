@@ -76,7 +76,7 @@ int main(){
     }
 
     /* Analyze BTB entry capacity */
-    uint32_t branch_vec[] = {1, 2, 4, 8, 16, 32, 64};
+    uint32_t branch_vec[] = {1, 2, 4,5,6,7, 8,9,10,11,12,13,14,15, 16, 32, 64}; // modified a little for eviction buffer;
     uint32_t align_vec[] = {12, 13, 14, 15, 16, 17, 18, 19};
     int branch_len = sizeof(branch_vec)/sizeof(branch_vec[0]);
     int align_len = sizeof(align_vec)/sizeof(align_vec[0]);
@@ -87,6 +87,9 @@ int main(){
             counter_map[i][j] = counter_diff;
         }
     }
+
+    // for(int i=0; i<sizeof branch_vec/sizeof(u_int32_t); i++)
+    //     branch_vec[i]  = branch_vec[i] * 2;
     /* Capacity result */
     printf("Capacity result(branch mispred / branches):\n");
     printf("branch/align\t");
@@ -102,6 +105,7 @@ int main(){
         printf("\n");
     }
     printf("\n");
+
 
     /* Capacity result2 */
     printf("Capacity result(branch size - branch mispred):\n");
