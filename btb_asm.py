@@ -129,8 +129,8 @@ if __name__=="__main__":
 
     # CODE = btb_size_arm("abc", branch_size, align) # '128000:0x1f400' bingo
     # print(CODE)
-    # CODE = btb_size_arm("abc", branch_size, align)
+    CODE = btb_size_arm("abc", branch_size, align)
     # CODE = btb_size_arm_conditional("abc", branch_size, align)
-    CODE = btb_size_arm_indirect("abc", branch_size, align) # '128000:0x1f400' bingo
+    #CODE = btb_size_arm_indirect("abc", branch_size, align) # '128000:0x1f400' bingo
     # CODE = btb_size_arm_for_evict_buffer("abc", branch_size, align) # '128000:0x1f400' bingo
     print(CODE)
