@@ -9,6 +9,10 @@
 #define BUFSIZE (1024*1024*1024) //1GB hugepage
 void (*btb_block)() = NULL;
 
+void void_func(){
+    return;
+}
+
 uint32_t repeat(uint32_t event, uint32_t branch_number, uint32_t align){
     puts("========================================");
     /* Generate test block */
@@ -28,11 +32,19 @@ uint32_t repeat(uint32_t event, uint32_t branch_number, uint32_t align){
 
     // don't need to clear the memory, cause we have `ret` in the end
     read(fd, btb_block, BUFSIZE);
+
+    printf("DEBUG: Read block done\n");
     
+    void_func();
+
+
     /* TODO: flash btb; */
     for(int i=0; i<10; i++){
         btb_block();
     }
+
+    printf("DEBUG: exec block for 10 times\n");
+    
 
     /* set event */
     set_pmc_events_0(event); 
@@ -67,7 +79,10 @@ int main(){
     uint32_t event = ARM_PMU_BR_MIS_PRED;
 
     /* Alloc enough memory*/
-    btb_block = mmap(NULL, BUFSIZE, PROT_READ|PROT_WRITE|PROT_EXEC,MAP_PRIVATE| MAP_ANONYMOUS|MAP_HUGETLB|MAP_HUGE_1GB, 0, 0); 
+    // btb_block = mmap(NULL, BUFSIZE, PROT_READ|PROT_WRITE|PROT_EXEC,MAP_PRIVATE| MAP_ANONYMOUS|MAP_HUGETLB|MAP_HUGE_1GB, 0, 0); 
+    /* when 1GB not available, alloc 2MB */
+    btb_block = mmap(NULL, BUFSIZE, PROT_READ|PROT_WRITE|PROT_EXEC,MAP_PRIVATE| MAP_ANONYMOUS|MAP_HUGETLB|MAP_HUGE_2MB, 0, 0);
+
     // 
     if(btb_block == MAP_FAILED){
         printf("mmap failed\n");
@@ -78,15 +93,20 @@ int main(){
     /* Analyze BTB entry capacity */
     uint32_t branch_vec[] = {1024, 1024*2, 1024*3, 1024*4, 1024*5, 1024*6, 1024*7, 1024*8};
     uint32_t align_vec[] = {3, 4, 5, 6, 7, 8, 9, 10};
+
+    // uint32_t branch_vec[] = {1024*2, 1024*3, 1024*4, 1024*5, 1024*6, 1024*7, 1024*8};
+    // uint32_t align_vec[] = {4, 5, 6, 7, 8, 9, 10};
     int branch_len = sizeof(branch_vec)/sizeof(branch_vec[0]);
     int align_len = sizeof(align_vec)/sizeof(align_vec[0]);
     uint32_t counter_map[branch_len][align_len];
     for (int i = 0; i <branch_len ; i++){
         for(int j = 0; j < align_len; j++){
             uint32_t counter_diff =  repeat(event, branch_vec[i], align_vec[j]);
+            printf("Branch: %u, Align: %u, Counter diff: %u\n", branch_vec[i], align_vec[j], counter_diff);
             counter_map[i][j] = counter_diff;
         }
     }
+
     /* Capacity result */
     printf("Capacity result(branch mispred / branches):\n");
     printf("branch/align\t");
