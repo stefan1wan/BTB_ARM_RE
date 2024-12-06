@@ -9,6 +9,10 @@
 #define BUFSIZE (1024*1024*1024) //1GB hugepage
 void (*btb_block)() = NULL;
 
+void void_func(){
+    return;
+}
+
 uint32_t repeat(uint32_t event, uint32_t branch_number, uint32_t align){
     puts("========================================");
     /* Generate test block */
@@ -28,6 +32,8 @@ uint32_t repeat(uint32_t event, uint32_t branch_number, uint32_t align){
 
     // don't need to clear the memory, cause we have `ret` in the end
     read(fd, btb_block, BUFSIZE);
+
+    void_func();
     
     /* TODO: flash btb; */
     for(int i=0; i<10; i++){
@@ -67,7 +73,9 @@ int main(){
     uint32_t event = ARM_PMU_BR_MIS_PRED;
 
     /* Alloc enough memory*/
-    btb_block = mmap(NULL, BUFSIZE, PROT_READ|PROT_WRITE|PROT_EXEC,MAP_PRIVATE| MAP_ANONYMOUS|MAP_HUGETLB|MAP_HUGE_1GB, 0, 0); 
+    // btb_block = mmap(NULL, BUFSIZE, PROT_READ|PROT_WRITE|PROT_EXEC,MAP_PRIVATE| MAP_ANONYMOUS|MAP_HUGETLB|MAP_HUGE_1GB, 0, 0); 
+    /* when 1GB not available, alloc 2MB */
+    btb_block = mmap(NULL, BUFSIZE, PROT_READ|PROT_WRITE|PROT_EXEC,MAP_PRIVATE| MAP_ANONYMOUS|MAP_HUGETLB|MAP_HUGE_2MB, 0, 0);
     // 
     if(btb_block == MAP_FAILED){
         printf("mmap failed\n");
@@ -76,8 +84,11 @@ int main(){
     }
 
     /* Analyze BTB entry capacity */
-    uint32_t branch_vec[] = {1, 2, 4,5,6,7, 8,9,10,11,12,13,14,15, 16, 32, 64}; // modified a little for eviction buffer;
-    uint32_t align_vec[] = {12, 13, 14, 15, 16, 17, 18, 19};
+    // uint32_t branch_vec[] = {1, 2, 4,5,6,7, 8,9,10,11,12,13,14,15, 16, 32, 64}; // modified a little for eviction buffer;
+    // uint32_t align_vec[] = {12, 13, 14, 15, 16, 17, 18, 19};
+
+    uint32_t branch_vec[] = {1, 2, 3, 4,5,6,7, 8}; // modified a little for eviction buffer;
+    uint32_t align_vec[] = { 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23};
     int branch_len = sizeof(branch_vec)/sizeof(branch_vec[0]);
     int align_len = sizeof(align_vec)/sizeof(align_vec[0]);
     uint32_t counter_map[branch_len][align_len];

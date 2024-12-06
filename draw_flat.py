@@ -11,7 +11,7 @@ y_align = []
 z_btb_size = []
 # draw map
 # with open('btb_miss_pred_map.txt') as f:
-with open('btb_miss_pred_map_pi.txt') as f:
+with open('btb_miss_pred_map_pi_2.txt') as f:
     content = f.readlines()
     for line in content:
         if not line:
